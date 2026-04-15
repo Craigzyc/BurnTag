@@ -1,7 +1,6 @@
 node_modules/
-data/config.json
-data/history.jsonl
-data/*.png
+data/
+!data/.gitkeep
 .env
 dist/
 out/

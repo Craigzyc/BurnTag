@@ -19,7 +19,7 @@
     "node": ">=22.0.0"
   },
   "build": {
-    "appId": "com.freshcontrols.burntag",
+    "appId": "com.burntag.burntag",
     "productName": "BurnTag",
     "directories": {
       "output": "dist"

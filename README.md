@@ -219,6 +219,10 @@ Types are auto-inferred from JS values if not specified. Default namespace `conf
 
 ### Labels
 
+<p align="center">
+  <img src="LabelDesigner.png" alt="BurnTag Label Designer" width="720">
+</p>
+
 The **Label Design** tab is a WYSIWYG designer with:
 
 - **Printer + size + orientation** picker (portrait/landscape)
@@ -485,7 +489,7 @@ npm run build:dir    # Unpacked build for smoke testing
 
 Build config is in [`package.json`](package.json) under `"build"`:
 
-- App ID: `com.freshcontrols.burntag`
+- App ID: `com.burntag.burntag`
 - Product name: `BurnTag`
 - Target: Windows NSIS, one-click, per-user install
 - Bundled: `main/**`, `preload/**`, `renderer/**`, pruned `node_modules/**`
