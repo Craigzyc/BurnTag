@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="592" height="368">
+    <rect width="592" height="368" fill="white"/>
+    
+    
+    
+    <text x="296" y="57" text-anchor="middle"
+      font-family="Arial,sans-serif"
+      font-weight="bold" font-size="40"
+      fill="#000000">MeshNode</text>
+    <line x1="0" y1="84" x2="592" y2="84" stroke="#000000" stroke-width="1.5"/>
+    
+    <text x="24" y="128" font-family="Consolas,monospace" font-size="24"  fill="black">S/N: FC-000019</text>
+    <text x="24" y="154" font-family="Consolas,monospace" font-size="22"  fill="black">MAC: 00:00:00:00:00:00</text>
+    <text x="24" y="180" font-family="Consolas,monospace" font-size="22"  fill="black">Contains:</text>
+    <text x="24" y="206" font-family="Consolas,monospace" font-size="22"  fill="black">FCC ID : Z4T-WIO-SX1262 </text>
+    <text x="24" y="232" font-family="Consolas,monospace" font-size="22"  fill="black">FCC ID : Z4T-XIAOESP32S3 </text>
+    <text x="24" y="258" font-family="Consolas,monospace" font-size="22"  fill="black">NODE ID: 11</text>
+    <text x="24" y="284" font-family="Consolas,monospace" font-size="22"  fill="black">SiteID: Sobeys</text>
+    
+    <line x1="24" y1="325" x2="568" y2="325" stroke="black" stroke-width="0.75"/>
+    <text x="24" y="343" text-anchor="start" font-family="Arial,sans-serif" font-size="18" fill="black">Designed and Assembled in the USA</text>
+  </svg>

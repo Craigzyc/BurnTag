@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self';">
+  <title>BurnTag</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Custom title bar -->
+  <div class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-title">BurnTag</span>
+    </div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" id="btnMinimize" aria-label="Minimize">
+        <svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="currentColor"/></svg>
+      </button>
+      <button class="titlebar-btn" id="btnMaximize" aria-label="Maximize">
+        <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+      </button>
+      <button class="titlebar-btn titlebar-close" id="btnClose" aria-label="Close">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- App header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="program">Program</button>
+        <button type="button" class="tab-btn" data-tab="design">Label Design</button>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="status-indicator" id="printerStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">Printer</span>
+      </span>
+      <label class="toggle-switch" title="Automatically flash and print when an ESP32 is plugged in">
+        <input type="checkbox" id="autoModeToggle">
+        <span class="toggle-slider"></span>
+        <span class="toggle-label">Auto Flash &amp; Print</span>
+      </label>
+    </div>
+  </header>
+
+  <!-- Tab content wrapper -->
+  <div class="tab-content">
+
+    <!-- ═══════════════════════════════════════════════════════
+         PROGRAM VIEW
+         ═══════════════════════════════════════════════════════ -->
+    <div id="programView" class="app-layout" style="display:flex;">
+
+      <!-- ─── LEFT SIDEBAR (settings) ─────────────────────── -->
+      <aside class="sidebar">
+        <form id="settingsForm" class="settings-form">
+          <!-- Profile -->
+          <fieldset class="compact-fieldset">
+            <legend>Profile</legend>
+            <div class="sidebar-row">
+              <select id="profileSelect" class="fc-select fc-select-sm" style="flex:1;">
+                <option value="">No Profile</option>
+              </select>
+              <button type="button" id="saveProfileBtn" class="btn btn-xs">Save</button>
+              <button type="button" id="deleteProfileBtn" class="btn btn-xs btn-danger">Del</button>
+            </div>
+            <div class="sidebar-row">
+              <button type="button" id="exportProfileBtn" class="btn btn-xs" style="flex:1;">Export</button>
+              <button type="button" id="importProfileBtn" class="btn btn-xs" style="flex:1;">Import</button>
+            </div>
+          </fieldset>
+
+          <!-- Label Template -->
+          <fieldset class="compact-fieldset">
+            <legend>Label Template</legend>
+            <div class="sidebar-row">
+              <select id="programLabelSelect" class="fc-select fc-select-sm" style="flex:1;">
+                <option value="">-- No label --</option>
+              </select>
+              <button type="button" id="programLoadLabelBtn" class="btn btn-xs">Load</button>
+            </div>
+          </fieldset>
+
+          <!-- Firmware -->
+          <fieldset class="compact-fieldset">
+            <legend>Firmware</legend>
+            <div class="sidebar-row" style="margin-bottom:4px;">
+              <button type="button" id="browseFirmwareBtn" class="btn btn-xs btn-primary" style="flex:1;">Browse .bin</button>
+              <button type="button" id="firmwareDirBtn" class="btn btn-xs" title="Scan a PlatformIO project directory">Scan Dir</button>
+            </div>
+            <select id="firmwareSelect" class="fc-select fc-select-sm" style="margin-bottom:4px;">
+              <option value="">-- Select firmware --</option>
+            </select>
+            <div id="firmwareInfo" class="firmware-info"></div>
+          </fieldset>
+
+          <!-- Serial Numbering -->
+          <fieldset class="compact-fieldset">
+            <legend>
+              <label class="toggle-switch toggle-inline" title="Enable sequential serial number assignment">
+                <input type="checkbox" id="serialEnabledToggle">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Serial Numbering</span>
+              </label>
+            </legend>
+            <div id="serialFields" style="display:none;">
+              <div class="sidebar-row">
+                <label class="sidebar-field">
+                  <span>Prefix (optional)</span>
+                  <input type="text" name="serialPrefix" placeholder="e.g. FC">
+                </label>
+                <label class="sidebar-field">
+                  <span>Next #</span>
+                  <input type="number" name="nextSerialNumber" min="1">
+                </label>
+              </div>
+              <label class="toggle-switch toggle-inline" style="margin-top:6px;" title="Also write the serial number to the device using the post-flash config mode">
+                <input type="checkbox" id="serialWriteToDeviceToggle">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Write serial to device</span>
+              </label>
+              <div id="serialDeviceFields" style="display:none;margin-top:6px;">
+                <div class="sidebar-row">
+                  <label class="sidebar-field">
+                    <span>Device Key</span>
+                    <input type="text" id="serialDeviceKey" placeholder="serial" maxlength="15">
+                  </label>
+                  <label class="sidebar-field">
+                    <span>NVS Type</span>
+                    <select id="serialDeviceType" class="fc-select fc-select-sm">
+                      <option value="string">string (incl. prefix)</option>
+                      <option value="u32">u32 (numeric only)</option>
+                      <option value="u16">u16 (numeric only)</option>
+                      <option value="">auto</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="hint-text" style="margin:2px 0 0;">
+                  Uses the post-flash config mode (JSON or NVS). Numeric types ignore the prefix — use <code>string</code> to keep the full "FC-000001" form.
+                </p>
+              </div>
+            </div>
+            <div id="serialDisabledHint" class="hint-text">
+              Serial numbers disabled. Enable to assign sequential S/N to each device.
+            </div>
+          </fieldset>
+
+          <!-- Post-Flash Config -->
+          <fieldset class="compact-fieldset">
+            <legend>
+              <label class="toggle-switch toggle-inline" title="Send configuration to device over serial after programming">
+                <input type="checkbox" id="postFlashConfigToggle">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Post-Flash Config</span>
+              </label>
+            </legend>
+            <div id="postFlashConfigFields" style="display:none;">
+              <div class="pfc-mode-row">
+                <div class="pfc-mode-tabs" role="tablist">
+                  <button type="button" class="pfc-mode-tab active" data-mode="json" role="tab">JSON over Serial</button>
+                  <button type="button" class="pfc-mode-tab" data-mode="nvs" role="tab">NVS Partition</button>
+                </div>
+                <button type="button" id="postFlashHelpBtn" class="btn btn-xs btn-help" title="How post-flash config works">?</button>
+              </div>
+
+              <!-- JSON-mode fields -->
+              <div id="postFlashJsonFields" class="pfc-mode-fields">
+                <div class="sidebar-row">
+                  <label class="sidebar-field">
+                    <span>Baud Rate</span>
+                    <select id="postFlashBaudRate" class="fc-select fc-select-sm">
+                      <option value="9600">9600</option>
+                      <option value="115200" selected>115200</option>
+                      <option value="460800">460800</option>
+                      <option value="921600">921600</option>
+                    </select>
+                  </label>
+                  <label class="sidebar-field">
+                    <span>Ready Timeout (ms)</span>
+                    <input type="number" id="postFlashReadyTimeout" value="15000" min="1000" max="60000" step="500">
+                  </label>
+                </div>
+                <div class="sidebar-row">
+                  <label class="sidebar-field">
+                    <span>Delay Between Writes (ms)</span>
+                    <input type="number" id="postFlashInterCommandDelay" value="20" min="0" max="5000" step="10">
+                  </label>
+                </div>
+                <label class="sidebar-field" style="margin-bottom:6px;">
+                  <span>Ping Command <small style="color:var(--fc-text-muted);">(sent on a loop until ready)</small></span>
+                  <input type="text" id="postFlashPingCommand" value='{"ping":1}' placeholder='{"ping":1}' style="font-family:var(--fc-mono);font-size:10px;">
+                </label>
+                <label class="sidebar-field" style="margin-bottom:6px;">
+                  <span>Ready Response</span>
+                  <input type="text" id="postFlashReadyResponse" value="ready == true" placeholder="ready == true" style="font-family:var(--fc-mono);font-size:10px;">
+                </label>
+                <label class="sidebar-field" style="margin-bottom:6px;">
+                  <span>Expected Response <small style="color:var(--fc-text-muted);">(per config command)</small></span>
+                  <input type="text" id="postFlashExpectedResponse" value="success == true" placeholder="success == true" style="font-family:var(--fc-mono);font-size:10px;">
+                </label>
+                <label class="sidebar-field" style="margin-bottom:6px;">
+                  <span>Command Template</span>
+                  <input type="text" id="postFlashCommandTemplate" value='{"set":{"{{key}}":{{value}}}}' placeholder='{"set":{"{{key}}":{{value}}}}' style="font-family:var(--fc-mono);font-size:10px;">
+                </label>
+              </div>
+
+              <!-- NVS-mode fields -->
+              <div id="postFlashNvsFields" class="pfc-mode-fields" style="display:none;">
+                <div class="sidebar-row">
+                  <label class="sidebar-field">
+                    <span>NVS Namespace</span>
+                    <input type="text" id="postFlashNvsNamespace" value="config" placeholder="config" maxlength="15">
+                  </label>
+                </div>
+                <div class="sidebar-row">
+                  <label class="sidebar-field">
+                    <span>Partition Offset</span>
+                    <input type="text" id="postFlashNvsOffset" value="0x9000" placeholder="0x9000" style="font-family:var(--fc-mono);">
+                  </label>
+                  <label class="sidebar-field">
+                    <span>Partition Size</span>
+                    <input type="text" id="postFlashNvsSize" value="0x6000" placeholder="0x6000" style="font-family:var(--fc-mono);">
+                  </label>
+                </div>
+                <p class="hint-text" style="margin:4px 0 6px;">
+                  Offset and size must match the <code>nvs</code> entry in your device's <code>partitions.csv</code>.
+                </p>
+              </div>
+
+              <div id="postFlashConfigItems" class="config-items-list">
+                <!-- Dynamic config item rows rendered by JS -->
+              </div>
+              <button type="button" id="addConfigItemBtn" class="btn btn-xs">+ Add Config Item</button>
+            </div>
+            <div id="postFlashConfigHint" class="hint-text">
+              Provision device after flashing. Enable to send JSON over serial or flash an NVS partition.
+            </div>
+          </fieldset>
+
+          <!-- Chip / Baud -->
+          <div class="sidebar-row">
+            <label class="sidebar-field">
+              <span>Chip</span>
+              <select name="chip" class="fc-select fc-select-sm">
+                <option value="auto">Auto</option>
+                <option value="esp32">ESP32</option>
+                <option value="esp32s2">S2</option>
+                <option value="esp32s3">S3</option>
+                <option value="esp32c3">C3</option>
+              </select>
+            </label>
+            <label class="sidebar-field">
+              <span>Baud</span>
+              <select name="baudRate" class="fc-select fc-select-sm">
+                <option value="115200">115200</option>
+                <option value="460800">460800</option>
+                <option value="921600">921600</option>
+              </select>
+            </label>
+          </div>
+
+          <!-- Flash Addresses -->
+          <fieldset class="compact-fieldset">
+            <legend>Flash Addresses</legend>
+            <div class="sidebar-row three-col">
+              <label class="sidebar-field"><span>Boot</span><input type="text" name="flashAddr_bootloader" placeholder="0x0"></label>
+              <label class="sidebar-field"><span>Part</span><input type="text" name="flashAddr_partitions" placeholder="0x8000"></label>
+              <label class="sidebar-field"><span>FW</span><input type="text" name="flashAddr_firmware" placeholder="0x10000"></label>
+            </div>
+          </fieldset>
+
+          <button type="submit" class="btn btn-primary btn-block">Save Settings</button>
+        </form>
+      </aside>
+
+      <!-- ─── MAIN CONTENT ────────────────────────────────── -->
+      <main class="content">
+        <!-- Pipeline stepper (full width) -->
+        <section class="panel pipeline-panel">
+          <div id="pipelineStepper" class="pipeline-stepper">
+            <!-- Built dynamically by JS based on config -->
+          </div>
+        </section>
+
+        <!-- Top row: Devices + Flash Log -->
+        <div class="content-row">
+          <section class="panel devices-panel">
+            <h2>Devices</h2>
+            <div id="deviceList" class="device-list">
+              <p class="empty-state">Plug in an ESP32...</p>
+            </div>
+          </section>
+
+          <section class="panel log-panel">
+            <div class="panel-header">
+              <h2>Flash Output</h2>
+              <button type="button" id="clearLogBtn" class="btn btn-xs">Clear</button>
+            </div>
+            <div class="progress-bar-container">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <pre id="flashLog" class="flash-log"></pre>
+          </section>
+        </div>
+
+        <!-- Bottom row: Label Preview + History -->
+        <div class="content-row">
+          <section class="panel label-panel">
+            <div class="panel-header">
+              <h2>Label Preview</h2>
+              <div style="display:flex;gap:4px;">
+                <button type="button" id="previewBtn" class="btn btn-xs">Preview</button>
+                <button type="button" id="printPreviewBtn" class="btn btn-xs btn-flash">Print</button>
+              </div>
+            </div>
+            <div id="labelPreview" class="label-preview">
+              <p class="empty-state-sm">No label yet</p>
+            </div>
+          </section>
+
+          <section class="panel history-panel">
+            <h2>History</h2>
+            <div class="table-scroll">
+              <table id="historyTable" class="history-table">
+                <thead>
+                  <tr><th>Time</th><th>Serial</th><th>MAC</th><th>Status</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         LABEL DESIGN VIEW
+         ═══════════════════════════════════════════════════════ -->
+    <div id="designView" class="design-layout" style="display:none;">
+
+      <!-- ─── LEFT: Design Form ───────────────────────────── -->
+      <div class="design-form-panel">
+        <form id="designForm" class="design-form">
+
+          <!-- Saved Templates -->
+          <fieldset class="compact-fieldset">
+            <legend>Saved Templates</legend>
+            <div class="sidebar-row">
+              <select id="savedTemplateSelect" class="fc-select fc-select-sm" style="flex:1;">
+                <option value="">-- Select template --</option>
+              </select>
+              <button type="button" id="loadTemplateBtn" class="btn btn-xs">Load</button>
+              <button type="button" id="newTemplateBtn" class="btn btn-xs">New</button>
+              <button type="button" id="deleteTemplateBtn" class="btn btn-xs btn-danger">Del</button>
+            </div>
+            <div class="sidebar-row">
+              <button type="button" id="exportTemplateBtn" class="btn btn-xs" style="flex:1;">Export</button>
+              <button type="button" id="importTemplateBtn" class="btn btn-xs" style="flex:1;">Import</button>
+            </div>
+          </fieldset>
+
+          <!-- Hardware -->
+          <fieldset class="compact-fieldset">
+            <legend>Hardware</legend>
+            <label class="sidebar-field">
+              <span>Printer</span>
+              <select name="designPrinter" class="fc-select fc-select-sm">
+                <option value="niimbot-b21-pro">Niimbot B21 Pro</option>
+                <option value="niimbot-b21">Niimbot B21</option>
+                <option value="niimbot-b1">Niimbot B1</option>
+              </select>
+            </label>
+            <label class="sidebar-field">
+              <span>Label Size</span>
+              <select name="designLabelSize" id="designLabelSize" class="fc-select fc-select-sm">
+                <!-- Populated dynamically from printer registry -->
+              </select>
+            </label>
+            <label class="sidebar-field">
+              <span>Orientation</span>
+              <select name="designOrientation" class="fc-select fc-select-sm">
+                <option value="landscape">Landscape</option>
+                <option value="portrait">Portrait</option>
+              </select>
+            </label>
+          </fieldset>
+
+          <!-- Header -->
+          <fieldset class="compact-fieldset">
+            <legend>Header</legend>
+            <label class="sidebar-field">
+              <span>Text</span>
+              <input type="text" name="headerText" value="" placeholder="Your brand name">
+            </label>
+            <label class="sidebar-field">
+              <span>Logo (optional, PNG/SVG)</span>
+              <input type="file" id="headerLogoFile" accept="image/png,image/svg+xml" class="file-input">
+            </label>
+            <div id="headerLogoPreview" class="logo-preview-row"></div>
+            <div class="sidebar-row">
+              <label class="sidebar-field">
+                <span>Font Size</span>
+                <input type="number" name="headerFontSize" value="32" min="8" max="72">
+              </label>
+              <label class="sidebar-field">
+                <span>Font</span>
+                <select name="headerFont" class="fc-select fc-select-sm">
+                  <option value="Arial">Arial</option>
+                  <option value="Helvetica">Helvetica</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Consolas">Consolas</option>
+                </select>
+              </label>
+              <label class="sidebar-field">
+                <span>Align</span>
+                <select name="headerAlign" class="fc-select fc-select-sm">
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </label>
+            </div>
+            <label class="sidebar-field checkbox-field">
+              <input type="checkbox" name="headerInverted" checked>
+              <span>White text on black background</span>
+            </label>
+            <label class="sidebar-field checkbox-field">
+              <input type="checkbox" name="headerSeparator">
+              <span>Separator line under header</span>
+            </label>
+          </fieldset>
+
+          <!-- Body Lines -->
+          <fieldset class="compact-fieldset">
+            <legend>Body Lines</legend>
+            <div id="bodyLinesList" class="body-lines-list">
+              <!-- Dynamic rows rendered by JS -->
+            </div>
+            <button type="button" id="addBodyLineBtn" class="btn btn-xs">+ Add Line</button>
+            <div class="variables-hint">
+              Variables: {mac} {date} {serial}* {config:key}**
+              <br><small>* {serial} requires Serial Numbering enabled</small>
+              <br><small>** {config:key} uses Post-Flash Config values, e.g. {config:nodeId}</small>
+            </div>
+          </fieldset>
+
+          <!-- QR Code -->
+          <fieldset class="compact-fieldset">
+            <legend>QR Code</legend>
+            <div class="sidebar-row">
+              <label class="sidebar-field checkbox-field">
+                <input type="checkbox" name="qrEnabled" checked>
+                <span>Enabled</span>
+              </label>
+            </div>
+            <div class="sidebar-row">
+              <label class="sidebar-field">
+                <span>Size (px)</span>
+                <input type="number" name="qrSize" value="200" min="50" max="500">
+              </label>
+            </div>
+            <label class="sidebar-field">
+              <span>URL Template</span>
+              <input type="text" name="qrUrlTemplate" placeholder="https://app.freshcontrols.io/onboard/{serial}">
+            </label>
+            <label class="sidebar-field">
+              <span>Error Correction</span>
+              <select name="qrErrorCorrection" class="fc-select fc-select-sm">
+                <option value="L">L (Low, 7%)</option>
+                <option value="M" selected>M (Medium, 15%)</option>
+                <option value="Q">Q (Quartile, 25%)</option>
+                <option value="H">H (High, 30%)</option>
+              </select>
+            </label>
+          </fieldset>
+
+          <!-- Footer -->
+          <fieldset class="compact-fieldset">
+            <legend>Footer</legend>
+            <div id="footerLinesList" class="footer-lines-list">
+              <!-- Dynamic rows rendered by JS -->
+            </div>
+            <button type="button" id="addFooterLineBtn" class="btn btn-xs">+ Add Line</button>
+            <div class="sidebar-row">
+              <label class="sidebar-field">
+                <span>Font Size</span>
+                <input type="number" name="footerFontSize" value="14" min="8" max="36">
+              </label>
+              <label class="sidebar-field">
+                <span>Align</span>
+                <select name="footerAlign" class="fc-select fc-select-sm">
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </label>
+              <label class="sidebar-field checkbox-field">
+                <input type="checkbox" name="footerSeparator" checked>
+                <span>Separator</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <button type="button" id="saveTemplateBtn" class="btn btn-primary btn-block">Save Template</button>
+        </form>
+      </div>
+
+      <!-- ─── RIGHT: Live Preview ─────────────────────────── -->
+      <div class="design-preview-panel">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Live Preview</h2>
+            <div style="display:flex;gap:4px;">
+              <button type="button" id="designPreviewBtn" class="btn btn-xs">Preview</button>
+              <button type="button" id="designPrintBtn" class="btn btn-xs btn-flash">Print</button>
+            </div>
+          </div>
+          <div id="designLabelPreview" class="label-preview">
+            <p class="empty-state-sm">Configure label and click Preview</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="errorBanner" class="error-banner hidden">
+    <span id="errorText"></span>
+    <button type="button" id="dismissError" class="btn btn-xs">Dismiss</button>
+  </div>
+
+  <!-- Post-Flash Config Help Modal -->
+  <div id="postFlashHelpModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="postFlashHelpTitle">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2 id="postFlashHelpTitle">Post-Flash Config Modes</h2>
+        <button type="button" class="modal-close" id="postFlashHelpClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>BurnTag supports two ways to provision configuration onto a device after flashing. Pick the one that matches how your firmware reads settings.</p>
+
+        <h3>JSON over Serial</h3>
+        <p>After the chip resets, BurnTag reopens the USB serial port and pings the firmware with a short JSON line. Once the firmware replies, BurnTag sends one config command per item and validates the response. Use this when settings change per-burn and the firmware already has a command parser.</p>
+        <p><strong>Firmware contract</strong> — your sketch must:</p>
+        <ol>
+          <li>Print or accept a <code>ping</code> request and reply with JSON that matches <strong>Ready Response</strong>, e.g. <span class="info-code">{"ready":true}</span></li>
+          <li>Accept each command rendered from <strong>Command Template</strong> (with <code>{{key}}</code> / <code>{{value}}</code> interpolated) and reply with JSON that matches <strong>Expected Response</strong>, e.g. <span class="info-code">{"success":true}</span></li>
+        </ol>
+        <p>Arduino sketch sketch (ESP32-C3/S3 with native USB CDC):</p>
+        <pre class="info-code code-block">Serial.begin(115200);
+// In loop():
+if (Serial.available()) {
+  String line = Serial.readStringUntil('\n');
+  if (line.indexOf("\"ping\"") &gt;= 0) {
+    Serial.println("{\"ready\":true}");
+  } else if (/* parse and apply */) {
+    Serial.println("{\"success\":true}");
+  }
+}</pre>
+        <p class="hint-text">The old fixed "Boot Delay" field is gone — the ping handshake replaces it, which is both faster when firmware boots quickly and more reliable when it doesn't.</p>
+
+        <h3>NVS Partition</h3>
+        <p>BurnTag generates an ESP-IDF NVS partition image in memory and flashes it alongside the firmware. The device reads values on boot using the standard <code>Preferences</code> / <code>nvs_get_*</code> APIs — no serial RPC, no boot-up race. Prefer this for factory provisioning data (ID, customer key, region, model).</p>
+        <p><strong>Firmware contract</strong> — your sketch reads values from the NVS namespace you configure here:</p>
+        <pre class="info-code code-block">Preferences prefs;
+prefs.begin("config", /*readOnly=*/true);
+uint32_t id = prefs.getUInt("id", 0);
+String key = prefs.getString("key", "");
+prefs.end();</pre>
+        <p><strong>Partition layout</strong> — <em>Offset</em> and <em>Size</em> must match the <code>nvs</code> entry in your device's <code>partitions.csv</code>. The Arduino default is:</p>
+        <pre class="info-code code-block">nvs,     data, nvs,     0x9000,  0x6000,</pre>
+        <p>Each item has a type: <code>u8 / u16 / u32 / i32 / string</code>. If you leave the type blank, BurnTag infers it from the value (integers become <code>u32</code>, text becomes <code>string</code>). Max 15 chars for keys; max ~125 items total.</p>
+
+        <h3>Writing the serial number to the device</h3>
+        <p>Enable <strong>Serial Numbering</strong> and tick <strong>Write serial to device</strong> to bake the generated serial into the chip, not just onto the label. It piggy-backs on whichever mode is selected above (JSON or NVS), using the <strong>Device Key</strong> you set there. Choose <code>string</code> if your firmware reads the full <code>"FC-000001"</code> form, or <code>u32</code>/<code>u16</code> if you only want the numeric part (leave the prefix blank in that case). The counter only advances after a successful burn.</p>
+
+        <h3>Common</h3>
+        <p>In both modes, <strong>Auto Increment</strong> bumps a numeric value by 1 after each successful burn. Use <code>{config:key}</code> in the Label Designer body lines to print any config value on the label — e.g. <code>S/N: {config:id}</code>.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="postFlashHelpCloseFooter">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- niimbluelib UMD (global: niimbluelib) for printer support -->
+  <script src="../node_modules/@mmote/niimbluelib/dist/umd/niimbluelib.js"></script>
+  <script src="js/app.js" type="module"></script>
+</body>
+</html>

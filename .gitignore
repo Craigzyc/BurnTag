@@ -1,0 +1,7 @@
+node_modules/
+data/config.json
+data/history.jsonl
+data/*.png
+.env
+dist/
+out/
