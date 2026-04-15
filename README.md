@@ -8,6 +8,8 @@
 
 Built for small-batch production programming: plug a board in, get a flashed, configured, serialized device and a printed label in one action — or enable Auto Mode and just keep plugging boards in.
 
+> ⚠️  **Use at your own risk.** BurnTag writes firmware and configuration to hardware. Incorrect inputs can permanently brick devices. The software is provided **as-is, without warranty** — see the [Disclaimer](#disclaimer) and [LICENSE](LICENSE). Licensed under **AGPL-3.0 with Commons Clause**: you may use and modify BurnTag freely and must share modifications under the same terms, but you **may not sell the software**.
+
 ---
 
 ## Table of Contents
@@ -32,6 +34,8 @@ Built for small-batch production programming: plug a board in, get a flashed, co
 - [Building](#building)
 - [Troubleshooting](#troubleshooting)
 - [Further Documentation](#further-documentation)
+- [License](#license)
+- [Disclaimer](#disclaimer)
 
 ---
 
@@ -536,4 +540,36 @@ Deeper docs in [`docs/`](docs/):
 
 ## License
 
-Proprietary — internal to Fresh Controls. Do not redistribute.
+BurnTag is licensed under the **GNU Affero General Public License v3.0 with Commons Clause**. See the [`LICENSE`](LICENSE) file for the full text.
+
+**What this means in practice:**
+
+- ✅ You may **use** BurnTag for any purpose, including commercial production programming on your own devices and for your own products.
+- ✅ You may **modify** the source freely.
+- ✅ You may **redistribute** the software and your modifications.
+- 🔁 **If you distribute or operate a modified version** (including as a hosted/network service), you **must release your modifications under the same license**, with source code available to recipients/users. This is the "contribute back" guarantee of the AGPL.
+- ❌ You may **not sell the software itself**, nor sell a product or service whose value derives, entirely or substantially, from BurnTag's functionality. The Commons Clause blocks resale of the software as a commercial offering.
+
+If you need a license that permits resale or a commercial offering, contact the maintainers to discuss a separate commercial license.
+
+---
+
+## Disclaimer
+
+> ⚠️  **USE AT YOUR OWN RISK.** BurnTag writes firmware to microcontrollers and drives peripheral hardware (serial ports, thermal printers). Incorrect firmware, flash addresses, partition layouts, or serial configuration **can permanently brick your devices**. Always verify your firmware and configuration against your hardware's datasheet before flashing production hardware in bulk.
+
+### No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU. SHOULD THE SOFTWARE PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR, OR CORRECTION.
+
+### Limitation of Liability
+
+IN NO EVENT AND UNDER NO LEGAL THEORY, WHETHER IN TORT (INCLUDING NEGLIGENCE), CONTRACT, OR OTHERWISE, UNLESS REQUIRED BY APPLICABLE LAW, SHALL ANY CONTRIBUTOR, AUTHOR, OR COPYRIGHT HOLDER BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES OF ANY CHARACTER ARISING AS A RESULT OF THIS LICENSE OR THE USE OR INABILITY TO USE THE SOFTWARE (INCLUDING BUT NOT LIMITED TO DAMAGES FOR LOSS OF GOODWILL, WORK STOPPAGE, COMPUTER FAILURE OR MALFUNCTION, BRICKED OR DAMAGED HARDWARE, LOSS OF DATA, FAILED PRODUCTION RUNS, OR ANY AND ALL OTHER COMMERCIAL DAMAGES OR LOSSES), EVEN IF SUCH CONTRIBUTOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+### Third-Party Hardware and Services
+
+BurnTag interoperates with third-party hardware (Espressif ESP chips, Niimbot printers, various USB-to-serial bridges) and third-party libraries (`esptool-js`, `niimbotjs`, `serialport`, `sharp`, and others). The authors and contributors of BurnTag make no representations about the behavior, compatibility, fitness, or reliability of any third-party hardware or software, and are not responsible for failures, incompatibilities, firmware damage, or any losses arising from their use in combination with BurnTag. Mention of or compatibility with any third-party product does not constitute endorsement.
+
+### Regulatory and Compliance
+
+Users are solely responsible for ensuring that any devices programmed, configured, or labeled with BurnTag comply with all applicable laws, regulations, certifications, and standards in their jurisdiction — including but not limited to FCC, CE, UKCA, ISED, and any product-safety, radio, or labeling requirements. BurnTag's inclusion of FCC ID fields on labels is a convenience; it does not constitute verification, endorsement, or guarantee of compliance.
