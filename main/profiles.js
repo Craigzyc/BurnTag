@@ -15,7 +15,7 @@ const PROFILE_KEYS = [
   'chip', 'baudRate',
   'flashAddresses', 'flashEnabled',
   'firmwareBaseDir', 'selectedFirmware',
-  'labelTemplate',
+  'labelTemplate', 'labelTemplateName',
   'postFlashConfig',
   'fccIds',
 ];

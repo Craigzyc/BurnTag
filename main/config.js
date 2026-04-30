@@ -21,6 +21,10 @@ export function getDefaults() {
     serialDeviceType: '',
     fccIds: [],  // [{ chip: 'ESP32-S3', id: '2XXXXX-YYYYY' }, ...]
     activeProfile: null,
+    // Name of the last named label template loaded via the program-view
+    // dropdown. Saved into profiles so loading a profile re-selects the same
+    // entry in the dropdown. Null when the active template is custom/inline.
+    labelTemplateName: null,
     firmwareBaseDir: process.env.FIRMWARE_BASE_DIR || '../firmware',
     selectedFirmware: null,
     flashAddresses: { bootloader: '0x0', partitions: '0x8000', firmware: '0x10000' },

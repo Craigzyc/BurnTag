@@ -1178,11 +1178,17 @@ profileSelect.addEventListener('change', async () => {
   if (!name) return;
   const updated = await window.api.loadProfile(name);
   if (!updated) return;
+  const wasMissingPfc = !updated.postFlashConfig || !('items' in (updated.postFlashConfig || {}));
+  const wasMissingLabelName = updated.labelTemplateName === undefined;
   config = updated;
   populateSettingsForm();
+  await refreshProgramLabels();           // re-pick the named label template
   await rescanFirmwareDir({ silent: true });
   await refreshProgramLabelPreview();
   appendLog(`Profile "${name}" loaded.`);
+  if (wasMissingPfc || wasMissingLabelName) {
+    appendLog(`Note: profile "${name}" was saved with an older format. Save it again to capture post-flash config items and the label template name.`);
+  }
 });
 
 // Simple modal dialogs (prompt/confirm not supported in Electron)
@@ -1252,14 +1258,19 @@ saveProfileBtn.addEventListener('click', async () => {
         partitions: flashEnabledCheckboxes.partitions.checked,
         firmware: flashEnabledCheckboxes.firmware.checked,
       },
+      firmwareBaseDir: config.firmwareBaseDir,
+      selectedFirmware: config.selectedFirmware,
       labelTemplate: config.labelTemplate,
+      labelTemplateName: programLabelSelect.value || null,
       postFlashConfig: collectPostFlashConfig(),
+      fccIds: config.fccIds || [],
     };
     await window.api.saveProfile(name.trim(), data);
     config.activeProfile = name.trim();
-    await window.api.updateConfig({ activeProfile: name.trim() });
+    await window.api.updateConfig({ activeProfile: name.trim(), labelTemplateName: data.labelTemplateName });
     await refreshProfiles();
-    appendLog(`Profile "${name.trim()}" saved.`);
+    const itemCount = data.postFlashConfig?.items?.length || 0;
+    appendLog(`Profile "${name.trim()}" saved (chip ${data.chip}, ${itemCount} config items, label "${data.labelTemplateName || 'inline'}").`);
   } catch (err) {
     showError('Failed to save profile: ' + err.message);
   }
@@ -1321,6 +1332,11 @@ async function refreshProgramLabels() {
     opt.textContent = t.name;
     programLabelSelect.appendChild(opt);
   }
+  // Restore selection from config (round-trips through profile save/load).
+  if (config.labelTemplateName) {
+    const exists = [...programLabelSelect.options].some(o => o.value === config.labelTemplateName);
+    if (exists) programLabelSelect.value = config.labelTemplateName;
+  }
 }
 
 programLoadLabelBtn.addEventListener('click', async () => {
@@ -1328,7 +1344,7 @@ programLoadLabelBtn.addEventListener('click', async () => {
   if (!name) return;
   const template = await window.api.loadLabelTemplate(name);
   if (template) {
-    config = await window.api.updateConfig({ labelTemplate: template });
+    config = await window.api.updateConfig({ labelTemplate: template, labelTemplateName: name });
     await refreshProgramLabelPreview();
     appendLog(`Label template "${name}" loaded.`);
   }
