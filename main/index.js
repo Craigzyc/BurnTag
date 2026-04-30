@@ -1,10 +1,29 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig, saveConfig } from './config.js';
 import { Programmer } from './programmer.js';
 import { registerIpcHandlers } from './ipc-handlers.js';
 
-const DATA_DIR = path.join(import.meta.dirname, '..', 'data');
+// In dev, runtime data lives next to the source tree so it's easy to inspect
+// and reset. In a packaged build, that path is inside the read-only asar, so
+// writes silently fail — see docs/superpowers/specs/2026-04-30-firmware-section-redesign-design.md.
+function resolveDataDir() {
+  if (!app.isPackaged) {
+    return path.join(import.meta.dirname, '..', 'data');
+  }
+  const userDataDir = app.getPath('userData');
+  if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
+
+  const seedConfig = path.join(process.resourcesPath, 'data', 'config.json');
+  const userConfig = path.join(userDataDir, 'config.json');
+  if (!fs.existsSync(userConfig) && fs.existsSync(seedConfig)) {
+    fs.copyFileSync(seedConfig, userConfig);
+  }
+  return userDataDir;
+}
+
+const DATA_DIR = resolveDataDir();
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const HISTORY_PATH = path.join(DATA_DIR, 'history.jsonl');
 const PROFILES_PATH = path.join(DATA_DIR, 'profiles.json');

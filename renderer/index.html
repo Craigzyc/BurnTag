@@ -85,17 +85,65 @@
             </div>
           </fieldset>
 
-          <!-- Firmware -->
+          <!-- Firmware (combined: files + addresses + chip/baud) -->
           <fieldset class="compact-fieldset">
             <legend>Firmware</legend>
-            <div class="sidebar-row" style="margin-bottom:4px;">
-              <button type="button" id="browseFirmwareBtn" class="btn btn-xs btn-primary" style="flex:1;">Browse .bin</button>
-              <button type="button" id="firmwareDirBtn" class="btn btn-xs" title="Scan a PlatformIO project directory">Scan Dir</button>
+            <div class="sidebar-row" style="margin-bottom:6px;">
+              <button type="button" id="firmwareDirBtn" class="btn btn-xs btn-primary" style="flex:1;" title="Smart-scan a folder for boot/partition/firmware bins">Scan Dir</button>
+              <button type="button" id="browseFirmwareBtn" class="btn btn-xs" style="flex:1;" title="Pick a firmware.bin and auto-fill siblings">Browse Files...</button>
             </div>
-            <select id="firmwareSelect" class="fc-select fc-select-sm" style="margin-bottom:4px;">
-              <option value="">-- Select firmware --</option>
-            </select>
-            <div id="firmwareInfo" class="firmware-info"></div>
+            <div id="firmwareBuildsRow" class="sidebar-row" style="display:none;margin-bottom:6px;">
+              <select id="firmwareSelect" class="fc-select fc-select-sm" style="flex:1;">
+                <option value="">-- Select build --</option>
+              </select>
+            </div>
+
+            <!-- Per-component rows: checkbox + address + path + browse -->
+            <div class="component-rows">
+              <div class="component-row" data-slot="bootloader">
+                <label class="component-check"><input type="checkbox" id="flashEnabled_bootloader"> Boot</label>
+                <input type="text" name="flashAddr_bootloader" class="component-addr" placeholder="0x0">
+                <span class="component-path" id="firmwarePath_bootloader" title="">—</span>
+                <button type="button" class="btn btn-xs component-browse" data-slot="bootloader" title="Browse for bootloader.bin">…</button>
+              </div>
+              <div class="component-row" data-slot="partitions">
+                <label class="component-check"><input type="checkbox" id="flashEnabled_partitions"> Part</label>
+                <input type="text" name="flashAddr_partitions" class="component-addr" placeholder="0x8000">
+                <span class="component-path" id="firmwarePath_partitions" title="">—</span>
+                <button type="button" class="btn btn-xs component-browse" data-slot="partitions" title="Browse for partitions.bin">…</button>
+              </div>
+              <div class="component-row" data-slot="firmware">
+                <label class="component-check"><input type="checkbox" id="flashEnabled_firmware"> FW</label>
+                <input type="text" name="flashAddr_firmware" class="component-addr" placeholder="0x10000">
+                <span class="component-path" id="firmwarePath_firmware" title="">—</span>
+                <button type="button" class="btn btn-xs component-browse" data-slot="firmware" title="Browse for firmware.bin (auto-fills siblings)">…</button>
+              </div>
+            </div>
+
+            <div class="sidebar-row" style="margin-top:6px;">
+              <label class="sidebar-field">
+                <span>Chip</span>
+                <div style="display:flex;gap:4px;">
+                  <select name="chip" class="fc-select fc-select-sm" style="flex:1;">
+                    <option value="esp32">ESP32</option>
+                    <option value="esp32s2">ESP32-S2</option>
+                    <option value="esp32s3">ESP32-S3</option>
+                    <option value="esp32c3">ESP32-C3</option>
+                    <option value="esp32c6">ESP32-C6</option>
+                    <option value="esp32h2">ESP32-H2</option>
+                  </select>
+                  <button type="button" id="detectChipBtn" class="btn btn-xs" title="Detect chip from a connected device">Detect</button>
+                </div>
+              </label>
+              <label class="sidebar-field">
+                <span>Baud</span>
+                <select name="baudRate" class="fc-select fc-select-sm">
+                  <option value="115200">115200</option>
+                  <option value="460800">460800</option>
+                  <option value="921600">921600</option>
+                </select>
+              </label>
+            </div>
           </fieldset>
 
           <!-- Serial Numbering -->
@@ -238,38 +286,6 @@
             </div>
             <div id="postFlashConfigHint" class="hint-text">
               Provision device after flashing. Enable to send JSON over serial or flash an NVS partition.
-            </div>
-          </fieldset>
-
-          <!-- Chip / Baud -->
-          <div class="sidebar-row">
-            <label class="sidebar-field">
-              <span>Chip</span>
-              <select name="chip" class="fc-select fc-select-sm">
-                <option value="auto">Auto</option>
-                <option value="esp32">ESP32</option>
-                <option value="esp32s2">S2</option>
-                <option value="esp32s3">S3</option>
-                <option value="esp32c3">C3</option>
-              </select>
-            </label>
-            <label class="sidebar-field">
-              <span>Baud</span>
-              <select name="baudRate" class="fc-select fc-select-sm">
-                <option value="115200">115200</option>
-                <option value="460800">460800</option>
-                <option value="921600">921600</option>
-              </select>
-            </label>
-          </div>
-
-          <!-- Flash Addresses -->
-          <fieldset class="compact-fieldset">
-            <legend>Flash Addresses</legend>
-            <div class="sidebar-row three-col">
-              <label class="sidebar-field"><span>Boot</span><input type="text" name="flashAddr_bootloader" placeholder="0x0"></label>
-              <label class="sidebar-field"><span>Part</span><input type="text" name="flashAddr_partitions" placeholder="0x8000"></label>
-              <label class="sidebar-field"><span>FW</span><input type="text" name="flashAddr_firmware" placeholder="0x10000"></label>
             </div>
           </fieldset>
 

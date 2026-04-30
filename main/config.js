@@ -24,7 +24,8 @@ export function getDefaults() {
     firmwareBaseDir: process.env.FIRMWARE_BASE_DIR || '../firmware',
     selectedFirmware: null,
     flashAddresses: { bootloader: '0x0', partitions: '0x8000', firmware: '0x10000' },
-    chip: 'auto',
+    flashEnabled: { bootloader: true, partitions: true, firmware: true },
+    chip: 'esp32s3',
     baudRate: 921600,
     autoMode: false,
     postFlashConfig: {
@@ -69,13 +70,16 @@ export function loadConfig(filePath) {
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const saved = JSON.parse(raw);
-    return {
+    const merged = {
       ...defaults,
       ...saved,
       flashAddresses: { ...defaults.flashAddresses, ...saved.flashAddresses },
+      flashEnabled: { ...defaults.flashEnabled, ...saved.flashEnabled },
       labelTemplate: { ...defaults.labelTemplate, ...saved.labelTemplate },
       postFlashConfig: { ...defaults.postFlashConfig, ...saved.postFlashConfig },
     };
+    if (merged.chip === 'auto') merged.chip = 'esp32s3';
+    return merged;
   } catch {
     return defaults;
   }

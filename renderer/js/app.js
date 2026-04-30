@@ -1,16 +1,51 @@
-import { requestPort, getGrantedPorts, connectAndFlash } from './flasher.js';
+import { requestPort, getGrantedPorts, connectAndFlash, ESPLoader, Transport } from './flasher.js';
 import { printLabel as printLabelRenderer } from './printer.js';
 
 // ─── State ─────────────────────────────────────────────────
 let config = {};
-let firmwareList = [];
+let firmwareBuilds = []; // [{ label, files }] when scan returns kind: 'multi'
 const devices = new Map();
+
+// Chip → flash-address defaults. Bootloader differs across the family; partitions
+// and firmware are the same on every modern ESP32 variant.
+const CHIP_DEFAULTS = {
+  esp32:   { bootloader: '0x1000', partitions: '0x8000', firmware: '0x10000' },
+  esp32s2: { bootloader: '0x1000', partitions: '0x8000', firmware: '0x10000' },
+  esp32s3: { bootloader: '0x0',    partitions: '0x8000', firmware: '0x10000' },
+  esp32c3: { bootloader: '0x0',    partitions: '0x8000', firmware: '0x10000' },
+  esp32c6: { bootloader: '0x0',    partitions: '0x8000', firmware: '0x10000' },
+  esp32h2: { bootloader: '0x0',    partitions: '0x8000', firmware: '0x10000' },
+};
+
+// Map esptool-js chip descriptions to our dropdown values.
+function chipDescriptionToValue(desc) {
+  if (!desc) return null;
+  const s = String(desc).toLowerCase();
+  if (s.includes('esp32-s3') || s.includes('esp32s3')) return 'esp32s3';
+  if (s.includes('esp32-s2') || s.includes('esp32s2')) return 'esp32s2';
+  if (s.includes('esp32-c6') || s.includes('esp32c6')) return 'esp32c6';
+  if (s.includes('esp32-c3') || s.includes('esp32c3')) return 'esp32c3';
+  if (s.includes('esp32-h2') || s.includes('esp32h2')) return 'esp32h2';
+  if (s.includes('esp32')) return 'esp32';
+  return null;
+}
 
 // ─── DOM References (Program View) ────────────────────────
 const firmwareSelect = document.getElementById('firmwareSelect');
-const firmwareInfo = document.getElementById('firmwareInfo');
+const firmwareBuildsRow = document.getElementById('firmwareBuildsRow');
 const browseFirmwareBtn = document.getElementById('browseFirmwareBtn');
 const firmwareDirBtn = document.getElementById('firmwareDirBtn');
+const detectChipBtn = document.getElementById('detectChipBtn');
+const flashEnabledCheckboxes = {
+  bootloader: document.getElementById('flashEnabled_bootloader'),
+  partitions: document.getElementById('flashEnabled_partitions'),
+  firmware: document.getElementById('flashEnabled_firmware'),
+};
+const firmwarePathSpans = {
+  bootloader: document.getElementById('firmwarePath_bootloader'),
+  partitions: document.getElementById('firmwarePath_partitions'),
+  firmware: document.getElementById('firmwarePath_firmware'),
+};
 const deviceList = document.getElementById('deviceList');
 const flashLog = document.getElementById('flashLog');
 const progressBar = document.getElementById('progressBar');
@@ -99,7 +134,7 @@ tabBtns.forEach(btn => {
 // ─── Init ──────────────────────────────────────────────────
 async function init() {
   config = await window.api.getConfig();
-  firmwareList = await window.api.getFirmware();
+  await rescanFirmwareDir({ silent: true });
   const history = await window.api.getHistory(50);
 
   // Populate label sizes from registry
@@ -112,8 +147,6 @@ async function init() {
     labelSizeSelect.appendChild(opt);
   }
 
-  populateFirmwareSelect();
-  showFirmwareInfo(config.selectedFirmware);
   populateSettingsForm();
   renderHistory(history);
   checkPrinterStatus();
@@ -192,40 +225,119 @@ function onSerialDisconnect(event) {
 }
 
 // ─── Firmware ──────────────────────────────────────────────
-function populateFirmwareSelect() {
-  while (firmwareSelect.options.length > 1) firmwareSelect.remove(1);
-  for (const fw of firmwareList) {
-    for (const build of fw.builds) {
-      const val = JSON.stringify({ name: fw.name, category: fw.category, env: build.env, files: build.files });
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = `${fw.category}/${fw.name} [${build.env}]`;
-      if (config.selectedFirmware?.env === build.env && config.selectedFirmware?.name === fw.name) opt.selected = true;
-      firmwareSelect.appendChild(opt);
-    }
+const SLOTS = ['bootloader', 'partitions', 'firmware'];
+
+function shortPath(p) {
+  if (!p) return '—';
+  const norm = p.replace(/\\/g, '/');
+  const parts = norm.split('/');
+  return parts.length <= 3 ? norm : '…/' + parts.slice(-3).join('/');
+}
+
+function refreshFirmwarePathDisplay() {
+  const files = config.selectedFirmware?.files || {};
+  for (const slot of SLOTS) {
+    const span = firmwarePathSpans[slot];
+    span.textContent = shortPath(files[slot]);
+    span.title = files[slot] || '';
+    span.classList.toggle('is-empty', !files[slot]);
   }
 }
 
-function showFirmwareInfo(selected) {
-  firmwareInfo.textContent = '';
-  if (!selected?.files) return;
-  const short = (p) => p ? p.replace(/\\/g, '/').split('/').slice(-3).join('/') : '';
-  const lines = [];
-  if (selected.files.bootloader) lines.push(`boot: ${short(selected.files.bootloader)}`);
-  if (selected.files.partitions) lines.push(`part: ${short(selected.files.partitions)}`);
-  lines.push(`fw:   ${short(selected.files.firmware)}`);
-  firmwareInfo.textContent = lines.join('\n');
+function refreshFlashEnabledCheckboxes() {
+  const enabled = config.flashEnabled || { bootloader: true, partitions: true, firmware: true };
+  for (const slot of SLOTS) {
+    flashEnabledCheckboxes[slot].checked = !!enabled[slot];
+  }
+}
+
+function refreshBuildsDropdown() {
+  while (firmwareSelect.options.length > 1) firmwareSelect.remove(1);
+  for (let i = 0; i < firmwareBuilds.length; i++) {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = firmwareBuilds[i].label;
+    firmwareSelect.appendChild(opt);
+  }
+  firmwareBuildsRow.style.display = firmwareBuilds.length > 0 ? 'flex' : 'none';
+}
+
+async function applyScannedFiles(files, label) {
+  // When scan or browse fills the slots, set checkboxes to track presence: a file
+  // that's missing on disk gets unchecked so it's excluded from the flash without
+  // surprising the user.
+  const flashEnabled = {
+    bootloader: !!files.bootloader,
+    partitions: !!files.partitions,
+    firmware: !!files.firmware,
+  };
+  const selectedFirmware = {
+    name: label || (config.selectedFirmware?.name) || 'firmware',
+    env: label || (config.selectedFirmware?.env) || 'firmware',
+    category: 'custom',
+    files,
+  };
+  config = await window.api.updateConfig({ selectedFirmware, flashEnabled });
+  refreshFirmwarePathDisplay();
+  refreshFlashEnabledCheckboxes();
+}
+
+async function rescanFirmwareDir({ silent = false } = {}) {
+  if (!config.firmwareBaseDir) {
+    firmwareBuilds = [];
+    refreshBuildsDropdown();
+    refreshFirmwarePathDisplay();
+    return;
+  }
+  const result = await window.api.scanFirmwareDir(config.firmwareBaseDir);
+  if (result.kind === 'multi') {
+    firmwareBuilds = result.builds;
+    refreshBuildsDropdown();
+    if (!silent) appendLog(`Scan: ${firmwareBuilds.length} builds found in ${config.firmwareBaseDir}`);
+  } else if (result.kind === 'single') {
+    firmwareBuilds = [];
+    refreshBuildsDropdown();
+    await applyScannedFiles(result.files, config.selectedFirmware?.name);
+    if (!silent) appendLog(`Scan: loaded ${shortPath(result.files.firmware)}`);
+  } else {
+    firmwareBuilds = [];
+    refreshBuildsDropdown();
+    refreshFirmwarePathDisplay();
+    if (!silent) appendLog(`No firmware found under ${config.firmwareBaseDir}`);
+  }
 }
 
 firmwareSelect.addEventListener('change', async () => {
-  if (firmwareSelect.value) {
-    const selected = JSON.parse(firmwareSelect.value);
-    config = await window.api.updateConfig({ selectedFirmware: selected });
-    showFirmwareInfo(selected);
-  } else {
-    config = await window.api.updateConfig({ selectedFirmware: null });
-    firmwareInfo.textContent = '';
-  }
+  const idx = parseInt(firmwareSelect.value, 10);
+  if (Number.isNaN(idx) || !firmwareBuilds[idx]) return;
+  const build = firmwareBuilds[idx];
+  await applyScannedFiles(build.files, build.label);
+});
+
+// Per-component checkbox handler: toggle whether to flash that slot.
+for (const slot of SLOTS) {
+  flashEnabledCheckboxes[slot].addEventListener('change', async () => {
+    const flashEnabled = { ...config.flashEnabled, [slot]: flashEnabledCheckboxes[slot].checked };
+    config = await window.api.updateConfig({ flashEnabled });
+  });
+}
+
+// Per-component browse: replaces only that slot.
+document.querySelectorAll('.component-browse').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const slot = btn.dataset.slot;
+    const result = await window.api.selectFirmwareFile({ slot });
+    if (!result) return;
+    if (slot === 'firmware') {
+      // Firmware-slot browse auto-fills siblings, just like the top-level Browse Files button.
+      await applyScannedFiles(result.files, result.name);
+      appendLog(`Firmware loaded: ${shortPath(result.files.firmware)}`);
+    } else {
+      const files = { ...(config.selectedFirmware?.files || {}), [slot]: result.path };
+      await applyScannedFiles(files, config.selectedFirmware?.name);
+      appendLog(`${slot} set: ${shortPath(result.path)}`);
+    }
+  });
 });
 
 // ─── Devices ───────────────────────────────────────────────
@@ -272,7 +384,20 @@ async function flashDevice(deviceKey, { print = true } = {}) {
   const device = devices.get(deviceKey);
   if (!device) { showError('Device not found'); return; }
   const selected = config.selectedFirmware;
-  if (!selected?.files?.firmware) { showError('No firmware selected'); return; }
+  const enabled = config.flashEnabled || { bootloader: true, partitions: true, firmware: true };
+  const files = selected?.files || {};
+
+  // Validate: every slot whose checkbox is on must have a file.
+  const missing = SLOTS.filter(slot => enabled[slot] && !files[slot]);
+  if (missing.length) {
+    showError(`Missing file(s) for: ${missing.join(', ')}. Uncheck the row or pick a file.`);
+    return;
+  }
+  // At least one slot must be enabled and present.
+  if (!SLOTS.some(slot => enabled[slot] && files[slot])) {
+    showError('Nothing selected to flash. Enable at least one component.');
+    return;
+  }
 
   flashing = true;
   pendingPrint = print;
@@ -297,17 +422,10 @@ async function flashDevice(deviceKey, { print = true } = {}) {
 
     const fileArray = [];
     const addrMap = config.flashAddresses;
-    if (selected.files.bootloader) {
-      const data = await window.api.readFirmwareFile(selected.files.bootloader);
-      fileArray.push({ address: parseInt(addrMap.bootloader, 16), data: new Uint8Array(data) });
-    }
-    if (selected.files.partitions) {
-      const data = await window.api.readFirmwareFile(selected.files.partitions);
-      fileArray.push({ address: parseInt(addrMap.partitions, 16), data: new Uint8Array(data) });
-    }
-    {
-      const data = await window.api.readFirmwareFile(selected.files.firmware);
-      fileArray.push({ address: parseInt(addrMap.firmware, 16), data: new Uint8Array(data) });
+    for (const slot of SLOTS) {
+      if (!enabled[slot] || !files[slot]) continue;
+      const data = await window.api.readFirmwareFile(files[slot]);
+      fileArray.push({ address: parseInt(addrMap[slot], 16), data: new Uint8Array(data) });
     }
 
     // Build the effective "items to write to the device" list. This is the
@@ -538,15 +656,78 @@ function populateSettingsForm() {
   updateSerialFieldsVisibility();
   settingsForm.serialPrefix.value = config.serialPrefix || '';
   settingsForm.nextSerialNumber.value = config.nextSerialNumber || 1;
-  settingsForm.chip.value = config.chip || 'auto';
+  settingsForm.chip.value = config.chip || 'esp32s3';
   settingsForm.baudRate.value = String(config.baudRate || 921600);
   settingsForm.flashAddr_bootloader.value = config.flashAddresses?.bootloader || '0x0';
   settingsForm.flashAddr_partitions.value = config.flashAddresses?.partitions || '0x8000';
   settingsForm.flashAddr_firmware.value = config.flashAddresses?.firmware || '0x10000';
   autoModeToggle.checked = config.autoMode || false;
+  refreshFirmwarePathDisplay();
+  refreshFlashEnabledCheckboxes();
   populatePostFlashConfigForm();
   buildPipeline();
 }
+
+// Chip change → apply that chip's address defaults to the three input fields.
+// Inputs stay editable so an unusual board can still be flashed without changing
+// the chip selection.
+settingsForm.chip.addEventListener('change', () => {
+  const defaults = CHIP_DEFAULTS[settingsForm.chip.value];
+  if (!defaults) return;
+  settingsForm.flashAddr_bootloader.value = defaults.bootloader;
+  settingsForm.flashAddr_partitions.value = defaults.partitions;
+  settingsForm.flashAddr_firmware.value = defaults.firmware;
+});
+
+// Detect: connect to the first connected ESP device, identify the chip, set the
+// dropdown + chip's default addresses, then disconnect. One-shot — designed for
+// a batch-burning station where you set this up once at the start of a run.
+detectChipBtn.addEventListener('click', async () => {
+  const granted = await getGrantedPorts();
+  const espPort = granted.find(p => isEspDevice(p.getInfo()));
+  if (!espPort) {
+    appendLog('[detect] No connected ESP device found. Plug one in and try again.');
+    showError('No connected ESP device found');
+    return;
+  }
+  detectChipBtn.disabled = true;
+  detectChipBtn.textContent = '...';
+  try {
+    const transport = new Transport(espPort, true);
+    const loader = new ESPLoader({
+      transport,
+      baudrate: parseInt(settingsForm.baudRate.value, 10) || 921600,
+      terminal: { clean() {}, writeLine: msg => appendLog(`[detect] ${msg}`), write: msg => appendLog(`[detect] ${msg}`) },
+    });
+    try {
+      const desc = await loader.main();
+      appendLog(`[detect] Chip: ${desc}`);
+      const chipValue = chipDescriptionToValue(desc);
+      if (chipValue) {
+        settingsForm.chip.value = chipValue;
+        const defaults = CHIP_DEFAULTS[chipValue];
+        settingsForm.flashAddr_bootloader.value = defaults.bootloader;
+        settingsForm.flashAddr_partitions.value = defaults.partitions;
+        settingsForm.flashAddr_firmware.value = defaults.firmware;
+        config = await window.api.updateConfig({
+          chip: chipValue,
+          flashAddresses: defaults,
+        });
+        appendLog(`[detect] Set chip to ${chipValue}, addresses to chip defaults.`);
+      } else {
+        appendLog(`[detect] Could not map "${desc}" to a known chip — leaving form unchanged.`);
+      }
+    } finally {
+      try { await transport.disconnect(); } catch { /* ignore */ }
+    }
+  } catch (err) {
+    appendLog('[detect] ERROR: ' + err.message);
+    showError('Detect failed: ' + err.message);
+  } finally {
+    detectChipBtn.disabled = false;
+    detectChipBtn.textContent = 'Detect';
+  }
+});
 
 function updateSerialFieldsVisibility() {
   const enabled = serialEnabledToggle.checked;
@@ -804,6 +985,11 @@ settingsForm.addEventListener('submit', async (e) => {
       partitions: settingsForm.flashAddr_partitions.value,
       firmware: settingsForm.flashAddr_firmware.value,
     },
+    flashEnabled: {
+      bootloader: flashEnabledCheckboxes.bootloader.checked,
+      partitions: flashEnabledCheckboxes.partitions.checked,
+      firmware: flashEnabledCheckboxes.firmware.checked,
+    },
     postFlashConfig: collectPostFlashConfig(),
   };
   config = await window.api.updateConfig(updates);
@@ -814,26 +1000,21 @@ autoModeToggle.addEventListener('change', async () => {
   config = await window.api.updateConfig({ autoMode: autoModeToggle.checked });
 });
 
-// Browse for a single firmware .bin file (auto-detects sibling bootloader/partitions)
+// Top-level browse: pick a firmware.bin and auto-fill the three slots from siblings.
 browseFirmwareBtn.addEventListener('click', async () => {
-  const result = await window.api.selectFirmwareFile();
+  const result = await window.api.selectFirmwareFile({ slot: 'firmware' });
   if (!result) return;
-  config = await window.api.updateConfig({ selectedFirmware: result });
-  // Add to dropdown if not already there, then select it
-  firmwareList = [{ ...result, builds: [{ env: result.env, files: result.files }] }, ...firmwareList];
-  populateFirmwareSelect();
-  showFirmwareInfo(result);
-  appendLog(`Firmware loaded: ${result.files.firmware}`);
+  await applyScannedFiles(result.files, result.name);
+  appendLog(`Firmware loaded: ${shortPath(result.files.firmware)}`);
 });
 
-// Scan a PlatformIO project directory for firmware builds
+// Smart-scan a directory. The main process picks single-folder, .pio/build/<env>,
+// or legacy sensors|gateway tree based on what's there.
 firmwareDirBtn.addEventListener('click', async () => {
   const dir = await window.api.selectDirectory();
   if (!dir) return;
   config = await window.api.updateConfig({ firmwareBaseDir: dir });
-  firmwareList = await window.api.getFirmware();
-  populateFirmwareSelect();
-  appendLog(`Scanned firmware directory: ${dir} (${firmwareList.reduce((n, fw) => n + fw.builds.length, 0)} builds found)`);
+  await rescanFirmwareDir({ silent: false });
 });
 
 // ─── Profiles ──────────────────────────────────────────────
@@ -853,7 +1034,7 @@ profileSelect.addEventListener('change', async () => {
   const name = profileSelect.value;
   if (!name) return;
   const updated = await window.api.loadProfile(name);
-  if (updated) { config = updated; populateSettingsForm(); populateFirmwareSelect(); }
+  if (updated) { config = updated; populateSettingsForm(); await rescanFirmwareDir({ silent: true }); }
 });
 
 // Simple modal dialogs (prompt/confirm not supported in Electron)
@@ -918,6 +1099,11 @@ saveProfileBtn.addEventListener('click', async () => {
         partitions: settingsForm.flashAddr_partitions.value,
         firmware: settingsForm.flashAddr_firmware.value,
       },
+      flashEnabled: {
+        bootloader: flashEnabledCheckboxes.bootloader.checked,
+        partitions: flashEnabledCheckboxes.partitions.checked,
+        firmware: flashEnabledCheckboxes.firmware.checked,
+      },
       labelTemplate: config.labelTemplate,
       postFlashConfig: collectPostFlashConfig(),
     };
@@ -949,6 +1135,7 @@ document.getElementById('exportProfileBtn').addEventListener('click', async () =
     chip: config.chip,
     baudRate: config.baudRate,
     flashAddresses: config.flashAddresses,
+    flashEnabled: config.flashEnabled,
     labelTemplate: config.labelTemplate,
     postFlashConfig: config.postFlashConfig,
   };
@@ -964,12 +1151,12 @@ document.getElementById('importProfileBtn').addEventListener('click', async () =
     if (!data) return;
     // Merge imported data into config
     const updates = {};
-    for (const key of ['serialEnabled', 'serialPrefix', 'nextSerialNumber', 'serialWriteToDevice', 'serialDeviceKey', 'serialDeviceType', 'chip', 'baudRate', 'flashAddresses', 'labelTemplate', 'postFlashConfig']) {
+    for (const key of ['serialEnabled', 'serialPrefix', 'nextSerialNumber', 'serialWriteToDevice', 'serialDeviceKey', 'serialDeviceType', 'chip', 'baudRate', 'flashAddresses', 'flashEnabled', 'labelTemplate', 'postFlashConfig']) {
       if (key in data) updates[key] = data[key];
     }
     config = await window.api.updateConfig(updates);
     populateSettingsForm();
-    populateFirmwareSelect();
+    await rescanFirmwareDir({ silent: true });
     appendLog('Profile imported.');
   } catch (err) {
     showError('Import failed: ' + err.message);

@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { saveConfig } from './config.js';
-import { scanAll } from './firmware-scanner.js';
+import { scanFirmwareDir } from './firmware-scanner.js';
 import { readHistory } from './history.js';
 import { generateLabel } from './label-generator.js';
 import { isPrinterAvailable, printLabel, getPrinterInfo, connectPrinter } from './label-printer.js';
@@ -29,6 +29,9 @@ export function registerIpcHandlers({ config, configPath, historyPath, profilesP
     if (updates.flashAddresses) {
       config.flashAddresses = { ...config.flashAddresses, ...updates.flashAddresses };
     }
+    if (updates.flashEnabled) {
+      config.flashEnabled = { ...config.flashEnabled, ...updates.flashEnabled };
+    }
     if (updates.labelTemplate) {
       config.labelTemplate = { ...config.labelTemplate, ...updates.labelTemplate };
     }
@@ -40,9 +43,16 @@ export function registerIpcHandlers({ config, configPath, historyPath, profilesP
     return config;
   });
 
-  ipcMain.handle('get-firmware', () => {
-    const baseDir = path.resolve(import.meta.dirname, '..', config.firmwareBaseDir);
-    return scanAll(baseDir);
+  // Smart-scan a directory: returns { kind: 'single'|'multi'|'empty', files?, builds? }.
+  // 'single' = the dir directly contains firmware.bin; 'multi' = .pio/build envs or legacy
+  // sensors/gateway tree; 'empty' = nothing found.
+  ipcMain.handle('scan-firmware-dir', (_event, dir) => {
+    const target = dir || config.firmwareBaseDir;
+    if (!target) return { kind: 'empty' };
+    const resolved = path.isAbsolute(target)
+      ? target
+      : path.resolve(import.meta.dirname, '..', target);
+    return scanFirmwareDir(resolved);
   });
 
   ipcMain.handle('get-history', (_event, limit) => {
@@ -145,11 +155,19 @@ export function registerIpcHandlers({ config, configPath, historyPath, profilesP
     return result.filePaths[0];
   });
 
-  // Browse for a firmware .bin file, then auto-detect sibling bootloader/partitions
-  ipcMain.handle('select-firmware-file', async (event) => {
+  // Browse for a single firmware component .bin. When slot === 'firmware' (or omitted),
+  // also auto-detects sibling bootloader/partitions in the same folder. For other slots,
+  // just returns { slot, path } so the caller updates only that row.
+  ipcMain.handle('select-firmware-file', async (event, opts = {}) => {
+    const slot = opts.slot || 'firmware';
     const win = BrowserWindow.fromWebContents(event.sender);
+    const titles = {
+      firmware: 'Select Firmware Binary',
+      bootloader: 'Select Bootloader Binary',
+      partitions: 'Select Partitions Binary',
+    };
     const result = await dialog.showOpenDialog(win, {
-      title: 'Select Firmware Binary',
+      title: titles[slot] || 'Select Binary',
       filters: [
         { name: 'Binary Files', extensions: ['bin'] },
         { name: 'All Files', extensions: ['*'] },
@@ -158,20 +176,25 @@ export function registerIpcHandlers({ config, configPath, historyPath, profilesP
     });
     if (result.canceled || !result.filePaths.length) return null;
 
-    const firmwarePath = result.filePaths[0];
-    const dir = path.dirname(firmwarePath);
-    const name = path.basename(dir);
+    const filePath = result.filePaths[0];
 
-    // Auto-detect sibling bootloader.bin and partitions.bin
+    if (slot !== 'firmware') {
+      return { slot, path: filePath };
+    }
+
+    // Firmware slot: auto-detect siblings.
+    const dir = path.dirname(filePath);
+    const name = path.basename(dir);
     const bootloaderPath = path.join(dir, 'bootloader.bin');
     const partitionsPath = path.join(dir, 'partitions.bin');
 
     return {
+      slot: 'firmware',
       name,
       env: name,
       category: 'custom',
       files: {
-        firmware: firmwarePath,
+        firmware: filePath,
         bootloader: fs.existsSync(bootloaderPath) ? bootloaderPath : null,
         partitions: fs.existsSync(partitionsPath) ? partitionsPath : null,
       },

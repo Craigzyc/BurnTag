@@ -5,8 +5,8 @@ contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   updateConfig: (updates) => ipcRenderer.invoke('update-config', updates),
 
-  // Firmware
-  getFirmware: () => ipcRenderer.invoke('get-firmware'),
+  // Firmware: smart-scan a directory. Returns { kind: 'single'|'multi'|'empty', files?, builds? }.
+  scanFirmwareDir: (dir) => ipcRenderer.invoke('scan-firmware-dir', dir),
 
   // Read .bin file contents (returns ArrayBuffer for esptool-js)
   readFirmwareFile: (filePath) => ipcRenderer.invoke('read-firmware-file', filePath),
@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Dialogs
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
-  selectFirmwareFile: () => ipcRenderer.invoke('select-firmware-file'),
+  selectFirmwareFile: (opts) => ipcRenderer.invoke('select-firmware-file', opts || {}),
   exportConfig: (data, defaultName) => ipcRenderer.invoke('export-config', { data, defaultName }),
   importConfig: () => ipcRenderer.invoke('import-config'),
 

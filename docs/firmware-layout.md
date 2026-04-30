@@ -1,22 +1,19 @@
 # Firmware Layout
 
-BurnTag's firmware scanner is opinionated — it expects a specific PlatformIO-style directory structure under the configured base directory. You can also bypass the scanner entirely by browsing for an arbitrary `firmware.bin`.
+BurnTag's firmware scanner is a smart-scan: point it at any folder and it figures out what kind of layout it is. You can also bypass the scanner entirely by browsing for an arbitrary `firmware.bin`, or by browsing for any one of the three component files independently.
 
 ## Scanner rules
 
 Source: [main/firmware-scanner.js](../main/firmware-scanner.js).
 
-The scanner walks `<firmwareBaseDir>` looking for two fixed top-level categories:
+`scanFirmwareDir(dir)` returns `{ kind, files? | builds? }` and tries three layouts in order:
 
-- `sensors/`
-- `gateway/`
+1. **Single-build folder** (`kind: 'single'`) — `dir` directly contains `firmware.bin`. Sibling `bootloader.bin` / `partitions.bin` are auto-included if present, null otherwise.
+2. **PlatformIO multi-env** (`kind: 'multi'`) — `dir/.pio/build/<env>/firmware.bin` exists for one or more envs. Each env becomes one entry labeled `[env]`.
+3. **Legacy nested layout** (`kind: 'multi'`) — `dir/<category>/<device>/.pio/build/<env>/firmware.bin` (where category is `sensors` or `gateway`). Each match is labeled `category/device [env]`.
+4. **Empty** (`kind: 'empty'`) — none of the above turned anything up.
 
-Any other top-level folders are ignored. Inside each category:
-
-- Every direct subfolder is treated as a **device** (name = folder name).
-- Each device is checked for `.pio/build/<env-name>/` subdirectories.
-- Each env directory is considered a **build** if it contains `firmware.bin`. Presence of `firmware.bin` is the sole marker — missing it, the env is skipped.
-- `bootloader.bin` and `partitions.bin` in the same env directory are included if present; otherwise the relevant slots are flashed only if the user has their own custom addresses.
+Each component (boot, partitions, firmware) is independently selectable in the sidebar — checkbox toggles whether it's flashed, and the per-row Browse button replaces just that file.
 
 ## Expected layout
 
@@ -87,23 +84,15 @@ The entry appears in the firmware dropdown as a pinned custom selection. You can
 
 ## Flash addresses
 
-Configurable per user in **Settings → Flash Addresses**. Defaults are ESP32-standard:
+Lives inside the **Firmware** sidebar fieldset alongside the file selectors. Selecting a chip from the dropdown writes that chip's defaults into the three address inputs:
 
-| File | Default offset |
-| --- | --- |
-| bootloader.bin | `0x0` |
-| partitions.bin | `0x8000` |
-| firmware.bin | `0x10000` |
+| Chip | bootloader | partitions | firmware |
+| --- | --- | --- | --- |
+| ESP32 | `0x1000` | `0x8000` | `0x10000` |
+| ESP32-S2 | `0x1000` | `0x8000` | `0x10000` |
+| ESP32-S3 / C3 / C6 / H2 | `0x0` | `0x8000` | `0x10000` |
 
-Chip-specific adjustments:
-
-| Chip | bootloader offset |
-| --- | --- |
-| ESP32 | `0x1000` *(some boards — check your datasheet)* |
-| ESP32-S2 | `0x1000` |
-| ESP32-S3 / C3 / C6 / H2 | `0x0` |
-
-The partition and firmware addresses are normally the same across ESP32 variants, but always verify against your chip's ROM layout.
+The fields stay editable so an unusual board can be flashed without changing the chip dropdown. The **Detect** button connects to a plugged-in device once, identifies the chip, and applies that chip's defaults — useful at the start of a batch run.
 
 ## NVS partition
 

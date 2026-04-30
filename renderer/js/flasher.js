@@ -5,6 +5,8 @@
  */
 import { ESPLoader, Transport } from '../../node_modules/esptool-js/bundle.js';
 
+export { ESPLoader, Transport };
+
 /**
  * Request a serial port matching the given VID filter.
  * Electron's session.on('select-serial-port') handles auto-selection
