@@ -5,19 +5,6 @@ import { appendRecord } from './history.js';
 import { saveConfig } from './config.js';
 
 /**
- * Check if a label template references {serial} in any text field.
- */
-function templateUsesSerial(template) {
-  if (!template) return false;
-  const texts = [
-    ...(template.lines || []).map(l => l.template || ''),
-    template.qr?.urlTemplate || '',
-    ...(template.footer?.lines || []),
-  ];
-  return texts.some(t => t.includes('{serial}'));
-}
-
-/**
  * Handles post-flash steps: serial assignment, label generation.
  * Printing is handled renderer-side via niimbluelib + Web Serial.
  */
@@ -46,7 +33,9 @@ export class Programmer extends EventEmitter {
 
       // Serial assignment — only if enabled. If the renderer already peeked
       // the next serial (to bake it into the device), we commit that same
-      // number here by incrementing the counter once.
+      // number here by incrementing the counter once. When disabled, any
+      // {serial} reference in the template renders as an empty string — the
+      // label generator handles that case gracefully.
       if (cfg.serialEnabled) {
         this.#emitStatus('assigning-serial', port, { step: 4, total: 7 });
         serial = getNextSerial(cfg);
@@ -57,8 +46,6 @@ export class Programmer extends EventEmitter {
         saveConfig(cfg, this.#configPath);
         record.serial = serial;
         this.#emitStatus('assigning-serial', port, { serial, done: true });
-      } else if (templateUsesSerial(cfg.labelTemplate)) {
-        throw new Error('Label template uses {serial} but serial numbering is disabled. Enable serial numbering or remove {serial} from the template.');
       }
 
       // Build config items as key→value map for {config:KEY} label variables
