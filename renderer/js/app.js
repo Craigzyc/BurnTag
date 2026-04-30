@@ -1,4 +1,4 @@
-import { requestPort, getGrantedPorts, connectAndFlash, ESPLoader, Transport } from './flasher.js';
+import { getGrantedPorts, connectAndFlash, ESPLoader, Transport } from './flasher.js';
 import { printLabel as printLabelRenderer } from './printer.js';
 
 // ─── State ─────────────────────────────────────────────────
@@ -198,6 +198,84 @@ async function scanPorts() {
     devices.set(getPortKey(port), { port, info });
   }
   renderDevices();
+}
+
+// Web Serial only fires `connect` for ports that have already been granted.
+// A brand-new ESP plugged in for the first time stays invisible until we call
+// requestPort() to grant it. The main-process select-serial-port handler
+// round-robins through ungranted ESPs, so calling requestPort repeatedly
+// discovers each device in turn. Stops when we get back a port we've already
+// seen (everything plugged in is now granted).
+async function discoverEspPorts({ silent = false } = {}) {
+  const filters = (config.espVidPids || []).map(v => ({
+    usbVendorId: parseInt(v.vid || v, 16),
+  }));
+  let added = 0;
+  for (let i = 0; i < 8; i++) {
+    let port;
+    try {
+      port = await navigator.serial.requestPort({ filters });
+    } catch {
+      // No more matching ports, or user aborted. Either way, we're done.
+      break;
+    }
+    const key = getPortKey(port);
+    if (devices.has(key)) break;
+    const info = port.getInfo();
+    if (!isEspDevice(info)) break;
+    devices.set(key, { port, info });
+    added++;
+  }
+  renderDevices();
+  if (!silent) {
+    if (added > 0) appendLog(`Discovered ${added} ESP device${added === 1 ? '' : 's'}.`);
+    else appendLog('No new ESP devices found.');
+  }
+  return added;
+}
+
+// Picker modal — used when an action (Detect) needs the user to choose among
+// multiple connected devices. Resolves to a device or null on cancel.
+function pickEspDevice(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--fc-surface);border:1px solid var(--fc-border);border-radius:8px;padding:16px;min-width:320px;max-width:480px;';
+    const title = document.createElement('div');
+    title.style.cssText = 'color:var(--fc-text);font-size:14px;font-weight:600;margin-bottom:10px;';
+    title.textContent = message;
+    box.appendChild(title);
+
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:12px;';
+    for (const [, dev] of devices) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn';
+      btn.style.cssText = 'text-align:left;';
+      btn.textContent = deviceLabel(dev.info);
+      btn.addEventListener('click', () => { overlay.remove(); resolve(dev); });
+      list.appendChild(btn);
+    }
+    box.appendChild(list);
+
+    const footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;justify-content:flex-end;';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn btn-xs';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => { overlay.remove(); resolve(null); });
+    footer.appendChild(cancel);
+    box.appendChild(footer);
+
+    overlay.appendChild(box);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) { overlay.remove(); resolve(null); }
+    });
+    document.body.appendChild(overlay);
+  });
 }
 
 function onSerialConnect(event) {
@@ -580,8 +658,14 @@ async function flashDevice(deviceKey, { print = true } = {}) {
     }
   } catch (err) {
     updatePipeline('reading-mac', 'error');
-    appendLog('ERROR: ' + err.message);
-    showError(err.message);
+    if (isPortBusyError(err)) {
+      const friendly = portBusyMessage(deviceLabel(device.info));
+      appendLog('ERROR: ' + friendly);
+      showError(friendly);
+    } else {
+      appendLog('ERROR: ' + err.message);
+      showError(err.message);
+    }
   } finally {
     // Always disconnect the transport so the port is released for next flash
     if (flashTransport) {
@@ -679,21 +763,43 @@ settingsForm.chip.addEventListener('change', () => {
   settingsForm.flashAddr_firmware.value = defaults.firmware;
 });
 
-// Detect: connect to the first connected ESP device, identify the chip, set the
-// dropdown + chip's default addresses, then disconnect. One-shot — designed for
-// a batch-burning station where you set this up once at the start of a run.
+// Common Windows error from Web Serial when the port is locked by another
+// process or a stale handle. Surface a hint that's actually actionable.
+function isPortBusyError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes('access denied')
+      || msg.includes('failed to open')
+      || msg.includes('the port is already open')
+      || msg.includes('access_denied');
+}
+
+function portBusyMessage(label) {
+  return `Port busy${label ? ` (${label})` : ''}. Close any other serial tools (Arduino IDE, PlatformIO Monitor, another BurnTag window) and try again. If it persists, unplug and replug the device.`;
+}
+
+// Detect: connect to a chosen ESP device, identify the chip, apply the chip's
+// default addresses, then disconnect. One-shot — designed for a batch-burning
+// station where you set this up once at the start of a run.
 detectChipBtn.addEventListener('click', async () => {
-  const granted = await getGrantedPorts();
-  const espPort = granted.find(p => isEspDevice(p.getInfo()));
-  if (!espPort) {
-    appendLog('[detect] No connected ESP device found. Plug one in and try again.');
+  if (devices.size === 0) {
+    appendLog('[detect] No connected ESP device found. Plug one in and click + Add Device.');
     showError('No connected ESP device found');
     return;
   }
+  let chosen;
+  if (devices.size === 1) {
+    chosen = [...devices.values()][0];
+  } else {
+    chosen = await pickEspDevice('Detect chip from which device?');
+    if (!chosen) return;
+  }
+  const label = deviceLabel(chosen.info);
+
   detectChipBtn.disabled = true;
   detectChipBtn.textContent = '...';
+  appendLog(`[detect] Using ${label}`);
   try {
-    const transport = new Transport(espPort, true);
+    const transport = new Transport(chosen.port, true);
     const loader = new ESPLoader({
       transport,
       baudrate: parseInt(settingsForm.baudRate.value, 10) || 921600,
@@ -721,12 +827,25 @@ detectChipBtn.addEventListener('click', async () => {
       try { await transport.disconnect(); } catch { /* ignore */ }
     }
   } catch (err) {
-    appendLog('[detect] ERROR: ' + err.message);
-    showError('Detect failed: ' + err.message);
+    if (isPortBusyError(err)) {
+      const friendly = portBusyMessage(label);
+      appendLog('[detect] ERROR: ' + friendly);
+      showError(friendly);
+    } else {
+      appendLog('[detect] ERROR: ' + err.message);
+      showError('Detect failed: ' + err.message);
+    }
   } finally {
     detectChipBtn.disabled = false;
     detectChipBtn.textContent = 'Detect';
   }
+});
+
+// + Add Device — let the user grant any newly-plugged ESPs that the renderer
+// hasn't seen yet. Each click can grant one new device thanks to the round-robin
+// pick in main/index.js's select-serial-port handler.
+document.getElementById('addDeviceBtn').addEventListener('click', () => {
+  discoverEspPorts({ silent: false }).catch(err => showError('Add device failed: ' + err.message));
 });
 
 function updateSerialFieldsVisibility() {

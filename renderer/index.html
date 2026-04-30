@@ -305,7 +305,10 @@
         <!-- Top row: Devices + Flash Log -->
         <div class="content-row">
           <section class="panel devices-panel">
-            <h2>Devices</h2>
+            <div class="panel-header">
+              <h2>Devices</h2>
+              <button type="button" id="addDeviceBtn" class="btn btn-xs" title="Grant permission for any newly-plugged ESP devices">+ Add Device</button>
+            </div>
             <div id="deviceList" class="device-list">
               <p class="empty-state">Plug in an ESP32...</p>
             </div>

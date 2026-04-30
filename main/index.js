@@ -78,33 +78,35 @@ function createWindow(config) {
   // Auto-select serial ports for both ESP flashing and Niimbot printing.
   //
   // When ESP flasher calls requestPort({filters: ESP VIDs}):
-  //   → portList only contains ESP devices → pick ESP
+  //   → portList only contains ESP devices → pick an ESP we haven't granted
+  //     yet, so successive calls discover all plugged-in ESPs (round-robin
+  //     grant). Falls back to the first port once everything is granted.
   //
   // When niimbluelib calls requestPort() with NO filters:
-  //   → portList contains ALL devices → pick Niimbot (it's a print request)
-  //
+  //   → portList contains ALL devices → pick Niimbot (it's a print request).
+  const grantedEspPortIds = new Set();
+
   mainWindow.webContents.session.on('select-serial-port', (event, portList, _webContents, callback) => {
     event.preventDefault();
 
-    const hasNiimbot = portList.some(p => isNiimbotVid(p.vendorId));
-    const hasEsp = portList.some(p => isEspVid(p.vendorId));
+    const espPorts = portList.filter(p => isEspVid(p.vendorId));
+    const niimbotPorts = portList.filter(p => isNiimbotVid(p.vendorId));
 
-    if (hasNiimbot && hasEsp) {
-      // Unfiltered request (both present) — likely a print request
-      const niimbot = portList.find(p => isNiimbotVid(p.vendorId));
-      callback(niimbot.portId);
-    } else if (hasEsp) {
-      // Filtered to ESP only — flash request
-      const esp = portList.find(p => isEspVid(p.vendorId));
-      callback(esp.portId);
-    } else if (hasNiimbot) {
-      // Only Niimbot — print request
-      const niimbot = portList.find(p => isNiimbotVid(p.vendorId));
-      callback(niimbot.portId);
+    if (niimbotPorts.length > 0 && espPorts.length > 0) {
+      // Unfiltered request with both present — niimbluelib print request
+      callback(niimbotPorts[0].portId);
+    } else if (espPorts.length > 0) {
+      const ungranted = espPorts.find(p => !grantedEspPortIds.has(p.portId));
+      const picked = ungranted || espPorts[0];
+      grantedEspPortIds.add(picked.portId);
+      callback(picked.portId);
+    } else if (niimbotPorts.length > 0) {
+      callback(niimbotPorts[0].portId);
     } else {
       callback(portList[0]?.portId || '');
     }
   });
+
 
   // Grant serial permission for both ESP and Niimbot devices
   mainWindow.webContents.session.setDevicePermissionHandler((details) => {
@@ -125,6 +127,9 @@ function createWindow(config) {
   });
 
   mainWindow.webContents.session.on('serial-port-removed', (_event, port) => {
+    // Drop from granted-tracking so a future replug gets re-granted via the
+    // round-robin pick in select-serial-port.
+    if (port?.portId) grantedEspPortIds.delete(port.portId);
     send('port:removed', port);
   });
 
