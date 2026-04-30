@@ -1137,15 +1137,39 @@ firmwareDirBtn.addEventListener('click', async () => {
 });
 
 // ─── Profiles ──────────────────────────────────────────────
+function profileOptionLabel(p) {
+  const bits = [];
+  if (p.chip) bits.push(p.chip);
+  if (p.configItemCount) bits.push(`${p.configItemCount} cfg`);
+  if (p.updatedAt) {
+    const d = new Date(p.updatedAt);
+    if (!isNaN(d)) bits.push(d.toISOString().slice(2, 10).replace(/-/g, '/'));
+  }
+  return bits.length ? `${p.name}  (${bits.join(' · ')})` : p.name;
+}
+
 async function refreshProfiles() {
   const profiles = await window.api.listProfiles();
   while (profileSelect.options.length > 1) profileSelect.remove(1);
   for (const p of profiles) {
     const opt = document.createElement('option');
     opt.value = p.name;
-    opt.textContent = p.name;
+    opt.textContent = profileOptionLabel(p);
     if (config.activeProfile === p.name) opt.selected = true;
     profileSelect.appendChild(opt);
+  }
+}
+
+async function refreshProgramLabelPreview() {
+  if (!config.labelTemplate) return;
+  try {
+    const dataUrl = await window.api.previewLabel({
+      template: config.labelTemplate,
+      variables: getProgramPreviewVariables(),
+    });
+    showLabelPreview(dataUrl);
+  } catch (err) {
+    appendLog('[preview] ' + err.message);
   }
 }
 
@@ -1153,7 +1177,12 @@ profileSelect.addEventListener('change', async () => {
   const name = profileSelect.value;
   if (!name) return;
   const updated = await window.api.loadProfile(name);
-  if (updated) { config = updated; populateSettingsForm(); await rescanFirmwareDir({ silent: true }); }
+  if (!updated) return;
+  config = updated;
+  populateSettingsForm();
+  await rescanFirmwareDir({ silent: true });
+  await refreshProgramLabelPreview();
+  appendLog(`Profile "${name}" loaded.`);
 });
 
 // Simple modal dialogs (prompt/confirm not supported in Electron)
@@ -1300,6 +1329,7 @@ programLoadLabelBtn.addEventListener('click', async () => {
   const template = await window.api.loadLabelTemplate(name);
   if (template) {
     config = await window.api.updateConfig({ labelTemplate: template });
+    await refreshProgramLabelPreview();
     appendLog(`Label template "${name}" loaded.`);
   }
 });

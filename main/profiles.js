@@ -2,13 +2,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 /**
- * Profile-saveable fields — everything an operator would want to switch
- * between device types without re-entering.
+ * Profile-saveable fields — the full picture an operator switches between
+ * device types. Anything missing here silently fails to round-trip, so when
+ * adding a new top-level config field also add it here.
+ *
+ * `nextSerialNumber` is intentionally NOT included: it's a counter that
+ * advances per-burn, not a per-profile setting.
  */
 const PROFILE_KEYS = [
-  'serialPrefix', 'serialWriteToDevice', 'serialDeviceKey', 'serialDeviceType',
+  'serialEnabled', 'serialPrefix', 'serialWriteToDevice',
+  'serialDeviceKey', 'serialDeviceType',
   'chip', 'baudRate',
-  'flashAddresses', 'labelTemplate',
+  'flashAddresses', 'flashEnabled',
+  'firmwareBaseDir', 'selectedFirmware',
+  'labelTemplate',
+  'postFlashConfig',
+  'fccIds',
 ];
 
 function readStore(filePath) {
@@ -29,12 +38,17 @@ function writeStore(store, filePath) {
 
 export function listProfiles(filePath) {
   const store = readStore(filePath);
-  return Object.keys(store).map(name => ({
-    name,
-    chip: store[name].settings?.chip,
-    fccCount: store[name].settings?.fccIds?.length || 0,
-    updatedAt: store[name].updatedAt,
-  }));
+  return Object.keys(store).map(name => {
+    const s = store[name].settings || {};
+    return {
+      name,
+      chip: s.chip === 'auto' ? 'esp32s3' : s.chip,
+      fccCount: s.fccIds?.length || 0,
+      configItemCount: s.postFlashConfig?.items?.length || 0,
+      serialEnabled: !!s.serialEnabled,
+      updatedAt: store[name].updatedAt,
+    };
+  });
 }
 
 export function saveProfile(filePath, name, data) {
@@ -49,7 +63,14 @@ export function saveProfile(filePath, name, data) {
 
 export function loadProfile(filePath, name) {
   const store = readStore(filePath);
-  return store[name] || null;
+  const profile = store[name];
+  if (!profile) return null;
+  // Profiles saved before chip="auto" was removed need to land on a real value
+  // or the renderer's chip <select> silently rejects the assignment.
+  if (profile.settings?.chip === 'auto') {
+    profile.settings.chip = 'esp32s3';
+  }
+  return profile;
 }
 
 export function deleteProfile(filePath, name) {

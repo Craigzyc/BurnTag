@@ -32,12 +32,11 @@ export function registerIpcHandlers({ config, configPath, historyPath, profilesP
     if (updates.flashEnabled) {
       config.flashEnabled = { ...config.flashEnabled, ...updates.flashEnabled };
     }
-    if (updates.labelTemplate) {
-      config.labelTemplate = { ...config.labelTemplate, ...updates.labelTemplate };
-    }
-    if (updates.postFlashConfig) {
-      config.postFlashConfig = { ...config.postFlashConfig, ...updates.postFlashConfig };
-    }
+    // labelTemplate and postFlashConfig: callers always send the complete
+    // object, so replace rather than merge — merging would carry stale
+    // fields from the prior template/config when loading a different one.
+    if (updates.labelTemplate) config.labelTemplate = updates.labelTemplate;
+    if (updates.postFlashConfig) config.postFlashConfig = updates.postFlashConfig;
     saveConfig(config, configPath);
     programmer.updateConfig(config);
     return config;
