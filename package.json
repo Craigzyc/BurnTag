@@ -1,6 +1,6 @@
 {
   "name": "burntag",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "BurnTag — ESP32 Flash & Label Station",
   "private": true,
   "type": "module",
